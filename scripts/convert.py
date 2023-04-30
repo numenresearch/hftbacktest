@@ -2,13 +2,13 @@ import numpy as np
 import pandas as pd
 import glob
 import os
-
 import sys
+import argparse
+from datetime import datetime, timedelta
+
 sys.path.append('..')
 
 from hftbacktest.data.utils import binancefutures_mod, create_last_snapshot
-
-# pd.set_option("display.float_format", "{:.0f}".format)
 
 # 设置浮点数的显示格式，保留10位有效数字
 pd.set_option('display.float_format', '{:.10f}'.format)
@@ -34,12 +34,13 @@ def get_files_by_date(symbol: str, date: str, directory: str = "examples/usdt/")
     return sorted_files
 
 
+
 # 将数据转换为DataFrame
 def convert_to_df(data):
     columns = ['event', 'exch_timestamp', 'local_timestamp', 'side', 'price', 'qty']
     df = pd.DataFrame(data, columns=columns)
 
-    print(df)
+    # print(df)
 
     # 转换数据类型
     df['event'] = df['event'].astype(int)
@@ -50,7 +51,23 @@ def convert_to_df(data):
     return df
 
 
-def main():
+def process_date(symbol, tick_size: float, lot_size: float, date, data_dir, output_dir, save=True):
+    npz_file = f'{output_dir}/{symbol}_{date}.npz'
+    eod_file = f'{output_dir}/{symbol}_{date}_eod.npz'
+
+    files = get_files_by_date(symbol, date, data_dir)
+    data = binancefutures_mod.convert(files)
+
+    if save:
+        np.savez(npz_file, data=data)
+
+    data = create_last_snapshot(data, tick_size=tick_size, lot_size=lot_size)
+
+    if save:
+        np.savez(eod_file, data=data)
+
+
+def test():
     symbol = 'bnbusdt'
     date = '20230415'
     # date = '20230416'
@@ -89,5 +106,29 @@ def main():
         np.savez(eod_file, data=data)
 
 
+def main(symbol, tick_size, lot_size, start_date, end_date, data_dir, output_dir):
+    start_date_obj = datetime.strptime(start_date, "%Y%m%d")
+    end_date_obj = datetime.strptime(end_date, "%Y%m%d")
+    date_list = [start_date_obj + timedelta(days=x) for x in range((end_date_obj - start_date_obj).days + 1)]
+
+    for date_obj in date_list:
+        date = date_obj.strftime("%Y%m%d")
+        # print(date)
+        process_date(symbol, tick_size, lot_size, date, data_dir, output_dir)
+
+
 if __name__ == '__main__':
-    main()
+    parser = argparse.ArgumentParser(description='Combine data by date or date range.')
+    parser.add_argument('--symbol', type=str, required=True, help='Symbol, e.g. "bnbusdt"')
+    parser.add_argument('--tick_size', type=float, required=True, help='Tick size for creating last snapshot')
+    parser.add_argument('--lot_size', type=float, required=True, help='Lot size for creating last snapshot')
+    parser.add_argument('--start_date', type=str, required=True, help='Start date in format YYYYMMDD')
+    parser.add_argument('--end_date', type=str, required=True, help='End date in format YYYYMMDD')
+    parser.add_argument('--data_dir', type=str, required=True, help='Path to the data directory')
+    parser.add_argument('--output_dir', type=str, required=True, default='../data/usdt', help='Path to the output directory')
+
+    args = parser.parse_args()
+
+    main(args.symbol, args.tick_size, args.lot_size, args.start_date, args.end_date, args.data_dir, args.output_dir)
+    # 命令行运行示例：
+    # python .\convert.py --symbol bnbusdt --tick_size 0.01 --lot_size 0.01 --start_date 20230415 --end_date 20230417 --data_dir "C:/data/binancefutures/data" --output_dir "../data/usdt"
